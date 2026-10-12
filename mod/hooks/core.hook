@@ -1,0 +1,170 @@
+;; Core wiring shared by every chapter.
+
+;; Spawn the persistent multiplayer controller alongside obj_time.
+@append gml_Object_obj_time_Create_0
+if (!instance_exists(obj_mp_controller))
+    instance_create(0, 0, obj_mp_controller);
+
+;; Input replication / blocking happens right after the game samples input.
+@prepend gml_Object_obj_time_Step_1
+mp_before_input();
+
+@append gml_Object_obj_time_Step_1
+mp_after_input();
+
+;; Player character sprite swap.
+@find gml_Object_obj_mainchara_Draw_0
+draw_self();
+@with
+mp_draw_mainchara(0);
+@end
+
+;; Chapter 4 draws Kris with draw_sprite_ext (tower shake offset) instead of draw_self().
+#chapters 4
+@find gml_Object_obj_mainchara_Draw_0
+draw_sprite_ext(sprite_index, image_index, x + tower_shake_xoffset, y, image_xscale, image_yscale, image_angle, image_blend, image_alpha);
+@with
+mp_draw_mainchara(tower_shake_xoffset);
+@end
+#chapters all
+
+;; A downed player's SOUL is dimmed and labelled.
+@append gml_Object_obj_heart_Draw_0
+mp_heart_draw_down();
+
+;; Chapter 1's snd_init does not record the song's file name (Chapter 2+ does): the music sync needs it.
+#chapters 1
+@find gml_GlobalScript_snd_init
+    _astream.mystream = _mystream;
+@with
+    _astream.mystream = _mystream;
+    _astream.songname = arg0;
+@end
+#chapters all
+
+;; Battle lifecycle.
+@append gml_Object_obj_battlecontroller_Create_0
+mp_battle_created();
+
+;; Turn barrier before every new menu turn.
+@regex gml_GlobalScript_scr_mnendturn
+(function scr_mnendturn\([^)]*\)\s*\{)
+@with
+$1
+    if (!mp_turn_gate())
+        return;
+@end
+
+;; Identical random numbers for the attack phase everywhere.
+@regex gml_GlobalScript_scr_endturn
+(function scr_endturn\([^)]*\)\s*\{)
+@with
+$1
+    mp_battle_seed(1);
+@end
+
+;; Bullets only hurt the hero you play.
+@regex gml_GlobalScript_scr_damage
+(function scr_damage\([^)]*\)\s*\{)
+@with
+$1
+    if (mp_battle_on())
+    {
+        target = mp_damage_target(target);
+        if (target < 0)
+        {
+            mp_damage_spectator();
+            return;
+        }
+    }
+    else if (mp_overworld_all_down())
+    {
+        scr_gameover();
+        return;
+    }
+@end
+
+;; Attack timing: everyone presses for their own hero.
+@prepend gml_Object_obj_attackpress_Draw_0
+mp_qte_apply();
+
+@append gml_Object_obj_attackpress_Create_0
+mp_qte_done();
+
+@find gml_Object_obj_attackpress_Draw_0
+if ((boltframe[i] - boltx) < -5)
+@with
+if ((boltframe[i] - boltx) < -5 && mp_qte_canexpire(boltchar[i]))
+@end
+
+@find gml_GlobalScript_scr_boltcheck_onebutton
+if (boltalive[i] == 1)
+@with
+if (boltalive[i] == 1 && mp_qte_mine(boltchar[i]))
+@end
+
+@regex gml_GlobalScript_scr_boltcheck
+(function scr_boltcheck\(arg0\)\s*\{)
+@with
+$1
+    if (!mp_qte_mine(arg0))
+        return;
+@end
+
+@prepend gml_Object_obj_attackpress_Other_11
+mp_qte_report(target, points[target]);
+
+;; Dialogue choices in shared cutscenes follow the leader.
+@prepend gml_Object_obj_choicer_neo_Other_10
+if (canchoose == 1 && choiced == 0)
+    mp_choice_made(mychoice);
+
+@prepend gml_Object_obj_choicer_neo_Step_0
+mp_choice_step();
+
+;; Loading a save must not broadcast that save's flags.
+@regex gml_GlobalScript_scr_load
+(function scr_load\([^)]*\)\s*\{)
+@with
+$1
+    mp_on_save_loaded();
+@end
+
+;; A party wipe in one game is a party wipe for everyone in that battle.
+@regex gml_GlobalScript_scr_gameover
+(function scr_gameover\([^)]*\)\s*\{)
+@with
+$1
+    mp_on_gameover();
+@end
+
+;; Chapter 5 followers already have a Draw event (chapters 1-4 get gml_Object_obj_caterpillarchara_Draw_0).
+#chapters 5
+@find gml_Object_obj_caterpillarchara_Draw_0
+draw_self();
+@with
+mp_draw_caterpillar();
+@end
+#chapters all
+
+;; Chapter 3 board: pieces are drawn as the players' characters (scr_mp_board, gml/ch3).
+#chapters 3
+@find gml_Object_obj_mainchara_board_Draw_0
+draw_sprite_ext(sprite_index, image_index, round(x / 2) * 2, round(y / 2) * 2, image_xscale, image_yscale, image_angle, image_blend, image_alpha);
+@with
+mp_board_draw_piece(round(x / 2) * 2, round(y / 2) * 2);
+@end
+
+@find gml_Object_obj_mainchara_board_Draw_0
+draw_self();
+@with
+mp_board_draw_piece(x, y);
+@end
+#chapters all
+
+;; Chapter 4: cutscene floor shadows copy their target's sprite; never draw a missing one.
+#chapters 4
+@prepend gml_Object_obj_floorshadow_Draw_0
+if (instance_exists(target) && !sprite_exists(target.sprite_index))
+    exit;
+#chapters all

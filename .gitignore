@@ -1,0 +1,12 @@
+DELTARUNE/
+build/
+buildv/
+work/
+dist/
+Crash-Screenshots/
+patcher/bin/
+patcher/obj/
+*.win
+*.ini
+multiplayer_crash.txt
+__pycache__/
