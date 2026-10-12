@@ -4,7 +4,7 @@
 > tested by a human. Expect rough edges and bugs, and please don't treat the code as hand-audited.
 > It contains no DELTARUNE game files: the patcher modifies *your own* copy of the game.
 
-Co-op multiplayer for DELTARUNE Chapters 1–5, in the style of Block Tales' multiplayer:
+Online (network) co-op multiplayer for DELTARUNE Chapters 1–5, each player on their own PC, in the style of Block Tales' multiplayer:
 
 * **Pick a party member.** Each player plays as Kris, Susie, Ralsei or (Chapter 2+) Noelle.
   Your character is what you walk around as, and in battle you choose that character's
@@ -29,6 +29,29 @@ Co-op multiplayer for DELTARUNE Chapters 1–5, in the style of Block Tales' mul
 Up to 8 players can connect. Each party member is controlled by one player. Extra players,
 or players whose character isn't in the party, watch (and dodge, harmlessly) in battle.
 The host controls any party member nobody picked.
+
+## Online multiplayer, not local
+
+This is **network multiplayer**: every player runs their **own copy of the game on their own
+computer** and they connect over the internet (or a LAN) with UDP. It is not split-screen,
+not shared-keyboard, and not Steam Remote Play. Each player has their own window, their own
+keyboard or controller, and can walk to a different room from everyone else.
+
+```
+   Player 1 (host)                              Player 2 (client)
+ +------------------+     UDP, port 26510     +------------------+
+ | DELTARUNE + mod  | <---------------------> | DELTARUNE + mod  |
+ | own screen/input |   positions, battle,    | own screen/input |
+ +------------------+   story state, music    +------------------+
+          ^                                              
+          |  UDP     More players (up to 8) connect the same way
+```
+
+* One player hosts (forward **UDP 26510** on their router); the others join by typing the
+  host's IP address in the F9 menu. There is no relay or central server.
+* In the same room you see each other's characters walk around live, with name tags.
+* The protocol is reliable-UDP with its own acknowledgements, so it copes with lag and
+  packet loss (see "Network protocol" below).
 
 ## Installing
 
