@@ -202,3 +202,9 @@ a game crashes.
 * Everyone must run the same chapter and the same mod version (checked on join).
 * Not affiliated with Toby Fox or the DELTARUNE team. The patched game files are generated
   on your machine from your own copy of the game.
+
+## License
+
+GPL-3.0 (see `LICENSE`). The patcher links UndertaleModLib, which is GPL-3.0, so the whole project
+is released under the same license. Third-party components are listed in `THIRD_PARTY.md`.
+Mostly written with AI assistance (Claude Code).
