@@ -719,6 +719,7 @@ function mp_room_start()
     global.mp_room_calm = 0;
     global.mp_room_plot = variable_global_exists("plot") ? global.plot : 0;
     mp_checkpoint_take();
+    mp_enemy_gone_room_start();
     // The mod's warp keeps interact at 3 for a few frames; objects that read variables the
     // player object only sets while interact is 0 (Chapter 1's Ralsei run event reads runmove) would crash.
     with (obj_mainchara)
@@ -1347,4 +1348,88 @@ function mp_party_dup(c)
         }
     }
     return false;
+}
+
+// ---------------------------------------------------------------- touched overworld enemies
+
+// Every player has their own copy of each overworld enemy. The game removes the one that was
+// touched only in the toucher's game, so the other players' copy (and a fresh one made when
+// they are pulled into the room, or when the mod rebuilds it) went on chasing them after the
+// battle and started the same battle again, over and over. The touched enemy is shared by its
+// object and its starting point (the same in every copy of the room) and removed everywhere.
+// It stays gone until I leave that room, as when you come back to a room in the game.
+
+// Prepended to the enemy's touch event (Chapter 1 obj_chaseenemy, Chapter 2+
+// obj_overworldenemy_parent): runs as the enemy.
+function mp_enemy_touched()
+{
+    if (!variable_global_exists("mp_inited") || !mp_on())
+        return;
+    if (variable_instance_exists(id, "encountered") && encountered != 0)
+        return;
+    if (mp_test_has("noenemysync"))
+        return;
+    var nm = object_get_name(object_index);
+    mp_log("touched enemy " + nm + " from " + string(xstart) + "," + string(ystart));
+    mp_enemy_gone_add(room, nm, xstart, ystart);
+    mp_begin(36);
+    mp_wu16(room);
+    mp_wstr(nm);
+    mp_ws16(xstart);
+    mp_ws16(ystart);
+    mp_send();
+}
+
+function mp_enemy_gone_add(rm, nm, xs, ys)
+{
+    if (!variable_global_exists("mp_gone"))
+        global.mp_gone = [];
+    array_push(global.mp_gone, [rm, nm, xs, ys]);
+    if (array_length(global.mp_gone) > 64)
+        array_delete(global.mp_gone, 0, 1);
+}
+
+// Removes the enemies that were touched in this room (another player's battle, or before the
+// mod rebuilt the room). Called at room start and when another player's touch arrives.
+function mp_enemy_gone_apply()
+{
+    if (!variable_global_exists("mp_gone"))
+        return;
+    for (var i = 0; i < array_length(global.mp_gone); i++)
+    {
+        var e = global.mp_gone[i];
+        if (e[0] != room)
+            continue;
+        var o = asset_get_index(e[1]);
+        if (o < 0 || !object_exists(o))
+            continue;
+        with (o)
+        {
+            if (object_index == o && xstart == e[2] && ystart == e[3])
+            {
+                mp_log("removing enemy " + e[1] + " touched in another game / before the room was rebuilt");
+                instance_destroy(id, false);
+            }
+        }
+    }
+}
+
+// Room start: leaving a room for another one brings its enemies back (as in the game).
+function mp_enemy_gone_room_start()
+{
+    if (!variable_global_exists("mp_gone"))
+        global.mp_gone = [];
+    if (!variable_global_exists("mp_gone_prev_room"))
+        global.mp_gone_prev_room = -1;
+    var prev = global.mp_gone_prev_room;
+    if (prev != room && prev >= 0)
+    {
+        for (var i = array_length(global.mp_gone) - 1; i >= 0; i--)
+        {
+            if (global.mp_gone[i][0] == prev)
+                array_delete(global.mp_gone, i, 1);
+        }
+    }
+    global.mp_gone_prev_room = room;
+    mp_enemy_gone_apply();
 }

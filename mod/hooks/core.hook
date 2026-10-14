@@ -185,3 +185,12 @@ $1
     if (mp_party_dup(arg0))
         return;
 @end
+
+;; A touched overworld enemy is removed in every player's game, not only the toucher's.
+#chapters 1
+@prepend gml_Object_obj_chaseenemy_Other_10
+mp_enemy_touched();
+#chapters 2,3,4,5
+@prepend gml_Object_obj_overworldenemy_parent_Other_10
+mp_enemy_touched();
+#chapters all

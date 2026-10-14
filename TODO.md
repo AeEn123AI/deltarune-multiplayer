@@ -5,6 +5,14 @@ Port forwarding (UDP 26510) stays the way to play online; no relay server.
 
 * F7 / "Stop all music and sounds" (F9 menu): `audio_stop_all()`, for when the music desyncs; rooms start their song again on the next room entry (2026-10-11).
 
+## User test report 6 (Chapter 1 battle loop with Rudinn), 2026-10-14
+
+> I'm in a constant battle loop with Rudinn, the enemy isn't despawning after the battle. And I'd need to actively run away from the enemy which isn't like the gameplay that deltarune normally has.
+
+Cause: every player has their own copy of each overworld enemy, and the game removes the touched one only in the toucher's game. The pulled player's copy (rebuilt fresh by the pull, right where they arrive) chased them after the battle, touched them and pulled everyone into the same battle again. Reproduced in room_field1 (`work/enemy.sh` with `noenemysync`): one Rudinn gave 4 battles bouncing between the two players.
+
+**Fixed.** The touch handler (`obj_chaseenemy` user event 0 in Chapter 1, `obj_overworldenemy_parent` in Chapters 2-5) sends the enemy's object and starting point (message 36); every game removes that enemy now and whenever the room is built again (pull, rebuild), until the player leaves the room for another one (then it comes back, as in the game). Tested: Chapter 1 room_field1 and Chapter 2 cyber maze, one battle, enemy gone in both games.
+
 ## User test report 5 (Chapter 1 with 3-4 players), 2026-10-14
 
 > Is there a reason you changed it so characters are reserved? [...] it essentially locks the character chooser if there's 3 players or more. [...] Also the health bar UI is still broken [...] some of the time even when I'm playing as a player not in the battle, it still makes me dodge the attacks for a different player. I managed to softlock the story and save file. After the Lancer battle, progressing to the room with Ralsei's training dummy is impossible due to Susie blocking it [...] Reloading the save doesn't help. I suggest looking out for anything which can cause a softlock like this, and adding a noclip feature.

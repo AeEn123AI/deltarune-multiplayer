@@ -190,6 +190,18 @@ function mp_sync_recv(type, from, b)
         global.mp_bwait_names_time = current_time;
         return;
     }
+    if (type == 36) // an overworld enemy was touched in the sender's game
+    {
+        var grm = buffer_read(b, buffer_u16);
+        var gnm = buffer_read(b, buffer_string);
+        var gx = buffer_read(b, buffer_s16);
+        var gy = buffer_read(b, buffer_s16);
+        mp_log("enemy " + gnm + " from " + string(gx) + "," + string(gy) + " was touched by " + string(from) + " in " + room_get_name(grm));
+        mp_enemy_gone_add(grm, gnm, gx, gy);
+        if (grm == room)
+            mp_enemy_gone_apply();
+        return;
+    }
     if (type == 34) // the song the sender is playing
     {
         global.mp_pmus[from] = buffer_read(b, buffer_string);

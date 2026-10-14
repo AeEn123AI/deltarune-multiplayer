@@ -98,6 +98,8 @@ Handy things:
 * If another player moves the story on while you are standing in a room, the room is
   rebuilt (same spot) a moment later so it matches theirs.
 * Players are in the same world (Light / Dark) as whoever they join or are pulled to.
+* An overworld enemy someone touched is gone for everyone afterwards (until you leave that
+  room and come back, as in the normal game).
 
 If the story gets stuck (a cutscene that never finishes, a character blocking the way for
 good), the F9 menu has softlock tools:
