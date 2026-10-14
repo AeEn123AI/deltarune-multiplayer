@@ -248,38 +248,6 @@ function mp_char_player_other(c)
     return -1;
 }
 
-// First character (starting after c, in direction d) nobody else plays; c itself if all are taken.
-function mp_char_free_from(c, d)
-{
-    var n = mp_char_max();
-    var k = c;
-    for (var i = 0; i < n; i++)
-    {
-        k = ((k - 1 + d + n) mod n) + 1;
-        if (mp_char_player_other(k) < 0)
-            return k;
-    }
-    return c;
-}
-
-// Two players can't play the same character: the one who joined later changes.
-function mp_char_conflict_tick()
-{
-    if ((global.mp_frame mod 30) != 0)
-        return;
-    var o = mp_char_player_other(global.mp_cfg_char);
-    if (o < 0 || o > global.mp_myid)
-        return;
-    var nc = mp_char_free_from(global.mp_cfg_char, 1);
-    if (nc == global.mp_cfg_char)
-        return;
-    global.mp_cfg_char = nc;
-    global.mp_pchar[global.mp_myid] = nc;
-    mp_config_save();
-    mp_send_pinfo(global.mp_myid);
-    mp_notify(global.mp_pname[o] + " already plays that character: you are now " + mp_char_name(nc) + ".");
-}
-
 // Who the "go to" hotkey / menu entry takes me to: the host, or (for the host) the first other player.
 function mp_goto_target()
 {
@@ -558,7 +526,6 @@ function mp_world_tick()
             mp_go_to_player(0);
     }
     mp_room_refresh_tick();
-    mp_char_conflict_tick();
     mp_music_tick();
 }
 
@@ -696,6 +663,15 @@ function mp_postbattle_tick()
         global.mp_postbattle = 30; // not yet
         return;
     }
+    // A story event of this room that survived the battle carries on after it: let it finish
+    // (it is the one that moves the story on); only if it stays stuck is the room rebuilt.
+    if (mp_room_event_active() && global.mp_postbattle_waits < 20)
+    {
+        global.mp_postbattle_waits += 1;
+        global.mp_postbattle = 30;
+        return;
+    }
+    global.mp_postbattle_waits = 0;
     mp_vars_apply_queue();
     with (obj_mainchara)
         visible = 1;
@@ -742,6 +718,7 @@ function mp_room_start()
     global.mp_room_frames = 0;
     global.mp_room_calm = 0;
     global.mp_room_plot = variable_global_exists("plot") ? global.plot : 0;
+    mp_checkpoint_take();
     // The mod's warp keeps interact at 3 for a few frames; objects that read variables the
     // player object only sets while interact is 0 (Chapter 1's Ralsei run event reads runmove) would crash.
     with (obj_mainchara)
@@ -784,7 +761,7 @@ function mp_room_refresh_tick()
         return;
     if (global.interact != 0 || global.mp_sstate != 0 || mp_in_battle_scene() || global.mp_warp_pending || global.mp_warp_delay > 0 || is_array(global.mp_pull))
         return;
-    if (mp_cutscene_running() || mp_credits_running() || mp_board_on() || mp_plat_on() || !instance_exists(obj_mainchara))
+    if (mp_room_event_active() || mp_credits_running() || mp_board_on() || mp_plat_on() || !instance_exists(obj_mainchara))
         return;
     global.mp_plot_remote = -1;
     mp_log("room refresh: plot " + string(global.mp_room_plot) + " -> " + string(global.plot));
@@ -989,7 +966,8 @@ function mp_vars_apply_queue()
     {
         var e = ds_list_find_value(global.mp_vqueue, 0);
         ds_list_delete(global.mp_vqueue, 0);
-        mp_var_apply(e[0], e[1], e[2]);
+        if (!mp_var_apply(e[0], e[1], e[2], true))
+            continue;
         if (global.mp_role == 1)
         {
             if (!started)
@@ -1103,11 +1081,12 @@ function mp_vars_recv(pid, b)
         var val = mp_rval(b);
         if (v < global.mp_vcount)
         {
+            var took = true;
             if (mode != 0 || mp_vars_can_sync())
-                mp_var_apply(v, idx, val);
+                took = mp_var_apply(v, idx, val, mode == 0);
             else
                 ds_list_add(global.mp_vqueue, [v, idx, val]);
-            if (echo)
+            if (echo && took)
                 array_push(got, [v, idx, val]);
         }
         v = buffer_read(b, buffer_u8);
@@ -1128,27 +1107,40 @@ function mp_vars_recv(pid, b)
     }
 }
 
-function mp_var_apply(v, idx, val)
+// Applies one shared value. Returns false if it was refused: in normal play the story only
+// moves forward, so a lower plot from an ordinary update is a stale one (e.g. the copy of a
+// cutscene that a lagging player is still watching sets the plot it set earlier for the other
+// player, after a battle already moved it on, and the other player's cutscene, waiting for
+// the newer value, would never finish). Mine is sent back instead. Full snapshots (joining,
+// loading a save, the story tools) can still move it back.
+function mp_var_apply(v, idx, val, incremental = false)
 {
     var nm = global.mp_vname[v];
     if (!variable_global_exists(nm))
-        return;
+        return false;
     var cur = variable_global_get(nm);
     if (is_array(cur))
     {
         if (idx >= array_length(cur))
-            return;
+            return false;
         mp_var_array_write(nm, idx, val);
         if (is_array(global.mp_vshadow[v]) && idx < array_length(global.mp_vshadow[v]))
             global.mp_vshadow[v][idx] = val;
     }
     else
     {
+        if (nm == "plot" && incremental && is_real(val) && is_real(cur) && val < cur && !mp_test_has("nomono"))
+        {
+            mp_log("refused stale plot " + string(val) + " (mine " + string(cur) + ")");
+            global.mp_vshadow[v] = val; // differs from mine: mine goes out on the next sync
+            return false;
+        }
         if (nm == "plot" && cur != val)
             global.mp_plot_remote = global.mp_frame;
         variable_global_set(nm, val);
         global.mp_vshadow[v] = val;
     }
+    return true;
 }
 
 // Writes straight into the game's global arrays (no copy-on-write surprises).
@@ -1208,4 +1200,151 @@ function mp_var_array_write(nm, idx, val)
             global.chararmor2[idx] = val;
             break;
     }
+}
+
+// ---------------------------------------------------------------- softlock tools
+
+// Room checkpoints: the shared story state as it was when I entered each of the last rooms, so a
+// story event that got stuck can be played again (F9, "Rewind story"). Entering the same room
+// again (the mod rebuilding it, or a rewind) keeps the older checkpoint.
+function mp_checkpoint_take()
+{
+    if (!variable_global_exists("mp_ckpt"))
+        global.mp_ckpt = [];
+    var n = array_length(global.mp_ckpt);
+    if (n > 0 && global.mp_ckpt[n - 1].rm == room)
+        return;
+    if (!variable_global_exists("plot") || !variable_global_exists("mp_vcount"))
+        return;
+    var vals = array_create(global.mp_vcount, undefined);
+    for (var v = 0; v < global.mp_vcount; v++)
+    {
+        var nm = global.mp_vname[v];
+        if (!variable_global_exists(nm))
+            continue;
+        var val = variable_global_get(nm);
+        if (is_array(val))
+        {
+            var cp = array_create(array_length(val), 0);
+            array_copy(cp, 0, val, 0, array_length(val));
+            vals[v] = cp;
+        }
+        else
+            vals[v] = val;
+    }
+    var ex = -99999;
+    var ey = 0;
+    if (instance_exists(obj_mainchara))
+    {
+        ex = obj_mainchara.x;
+        ey = obj_mainchara.y;
+    }
+    array_push(global.mp_ckpt, { rm: room, vals: vals, ex: ex, ey: ey });
+    if (array_length(global.mp_ckpt) > 3)
+        array_delete(global.mp_ckpt, 0, 1);
+}
+
+// Only the host (or a single player) changes the shared story state with these tools.
+function mp_story_tools_allowed()
+{
+    return global.mp_role != 2;
+}
+
+// Puts the story state back to how it was when I entered this room, for everyone, and enters
+// the room again: its story event plays again from the start.
+function mp_checkpoint_rewind()
+{
+    if (!mp_story_tools_allowed())
+        return;
+    var c = -1;
+    if (variable_global_exists("mp_ckpt"))
+    {
+        for (var i = array_length(global.mp_ckpt) - 1; i >= 0; i--)
+        {
+            if (global.mp_ckpt[i].rm == room)
+            {
+                c = global.mp_ckpt[i];
+                break;
+            }
+        }
+    }
+    if (!is_struct(c) || !instance_exists(obj_mainchara))
+    {
+        mp_notify("No checkpoint for this room (enter it again first).");
+        return;
+    }
+    for (var v = 0; v < global.mp_vcount; v++)
+    {
+        var nm = global.mp_vname[v];
+        var val = c.vals[v];
+        if (is_undefined(val) || !variable_global_exists(nm))
+            continue;
+        if (is_array(val))
+        {
+            var cur = variable_global_get(nm);
+            var n = min(array_length(val), array_length(cur));
+            for (var k = 0; k < n; k++)
+            {
+                if (cur[k] != val[k])
+                    mp_var_array_write(nm, k, val[k]);
+            }
+        }
+        else
+            variable_global_set(nm, val);
+    }
+    mp_log("rewind to checkpoint of " + room_get_name(room) + ", plot " + string(global.plot));
+    mp_story_reenter("Story rewound to when you entered this room.", c.ex, c.ey);
+}
+
+// Sets the story progress value (global.plot) for everyone and enters the room again.
+function mp_story_set(n)
+{
+    if (!mp_story_tools_allowed() || !variable_global_exists("plot") || !instance_exists(obj_mainchara))
+        return;
+    global.plot = n;
+    mp_log("story progress set to " + string(n));
+    mp_story_reenter("Story progress set to " + string(n) + ".", obj_mainchara.x, obj_mainchara.y);
+}
+
+// After a story tool changed the shared state: everyone takes the host's state (a full snapshot
+// also moves the clients to the host, entering the room again) and the host re-enters the room.
+function mp_story_reenter(msg, xx, yy)
+{
+    if (global.mp_role == 1)
+        mp_vars_send_full(-1);
+    else
+        mp_vars_reset_shadow();
+    mp_close_local_dialogue();
+    global.interact = 0;
+    global.mp_warp_reenter = 1;
+    mp_warp(room, xx, yy, 0);
+    mp_notify(msg);
+}
+
+// Noclip: walk through walls (local, for getting out of a softlock). Only while I am free to walk.
+function mp_noclip_on()
+{
+    return variable_global_exists("mp_noclip") && global.mp_noclip && global.interact == 0;
+}
+
+function mp_noclip_toggle()
+{
+    global.mp_noclip = !global.mp_noclip;
+    mp_notify(global.mp_noclip ? "Noclip ON: you walk through walls (F6 to turn off)." : "Noclip OFF.");
+}
+
+// Prepended to scr_getchar: in multiplayer, a party member already in the party is not added again.
+function mp_party_dup(c)
+{
+    if (!variable_global_exists("mp_inited") || !mp_on())
+        return false;
+    for (var i = 0; i < 3; i++)
+    {
+        if (global.char[i] == c)
+        {
+            mp_log("scr_getchar(" + string(c) + "): already in the party");
+            return true;
+        }
+    }
+    return false;
 }

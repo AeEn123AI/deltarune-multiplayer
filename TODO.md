@@ -5,6 +5,20 @@ Port forwarding (UDP 26510) stays the way to play online; no relay server.
 
 * F7 / "Stop all music and sounds" (F9 menu): `audio_stop_all()`, for when the music desyncs; rooms start their song again on the next room entry (2026-10-11).
 
+## User test report 5 (Chapter 1 with 3-4 players), 2026-10-14
+
+> Is there a reason you changed it so characters are reserved? [...] it essentially locks the character chooser if there's 3 players or more. [...] Also the health bar UI is still broken [...] some of the time even when I'm playing as a player not in the battle, it still makes me dodge the attacks for a different player. I managed to softlock the story and save file. After the Lancer battle, progressing to the room with Ralsei's training dummy is impossible due to Susie blocking it [...] Reloading the save doesn't help. I suggest looking out for anything which can cause a softlock like this, and adding a noclip feature.
+
+| # | Problem | Cause | Fix / status |
+|---|---|---|---|
+| 1 | Character lock blocks the F9 picker with 3+ players. | A UX choice (TODO "same character twice"), not a bug fix: duplicates were already safe (the battle slot goes to the lowest-numbered player with that character). | **Removed.** Picker cycles freely, no auto-switch; the row says "(also P2: you watch battles)". Tested: 4 players all Kris, nobody switched. |
+| 2 | HP bar drawn nearly empty while the numbers are right. | Numbers read from network buffers are int32; the game divides HP by max HP and int32 / int32 is an integer division (71 / 90 = 0). Logged: `int32/int32 ratio=0`. | **Fixed.** `mp_num()` turns every received number into a real (`mp_rval`, battle HP/QTE reads). Tested: Chapter 1 battle, bars match the numbers on both screens (screenshot). |
+| 3 | Players whose character isn't in the battle still dodge. | A watcher got a normal SOUL (hits did nothing, but it flashed). | **Fixed.** A watcher's SOUL is dimmed and labelled WATCHING, no hit flash/sound, status line "Watching: Ralsei is not in this battle. No need to dodge." Tested with 3 players, party Kris+Susie. |
+| 4 | Story softlock after the Lancer battle (Susie blocks the way, survives reloading). | `obj_darkcastle_event` (room_castle_front) runs in each player's game: plot 20/21, Lancer battle (22), Ralsei's story, plot 30. The lagging player's copy wrote plot 21 after 22; the host took it, its room was rebuilt during the story (con 100: the old `con < 90` cut-off missed it), the event deleted itself (it does when plot >= 20) and plot stayed 21. Reproduced with `staleplot:22:21` + `nomono`: plot ends at 21. | **Fixed.** (a) Ordinary updates can't move plot backwards (refused; the higher value is sent back); full snapshots still can. (b) A room is not rebuilt (plot refresh, post-battle rebuild) while a Chapter 1 event's `con` changed in the last 10 s. Same test with the fix: both games end at plot 30, party Kris+Ralsei (as in vanilla). (c) `scr_getchar` never adds a party member twice in multiplayer. |
+| 5 | Way out of softlocks. | | **Added** (F9): noclip (F6, own game only), "replay this room's story" (host: room-entry checkpoint of the shared state, room re-entered for everyone), "story progress < N >" (host: set plot, re-enter). README has the recipe for this save (castle front door, 19). |
+
+Tests after these changes: story tool on a stuck save (plot 21, Kris+Susie, real F9 key presses, set 19): the castle scene and Lancer battle replay, Susie not added twice, both games end at plot 30 with Kris+Ralsei; rewind (gold/flag/plot back to room entry on both games); noclip (real F6: through Susie's blocker into room_castle_tutorial; without it stuck at x=408). Regressions: `regress.sh` all 5 chapters identical, `cutscenes.sh` 9/9 pass, Chapter 1 story sweep 75/79 (the same 4 test artifacts as before).
+
 ## Open — user test report 4 (Chapter 1 Ralsei cutscene into the Lancer battle: softlock), 2026-10-11
 
 Reported by the user after playing it themselves (two screenshots; the window title is "The Beginning", i.e. Chapter 1, the Lancer-on-a-bike fight in the castle prison hall):
@@ -66,7 +80,7 @@ All five chapters swept again with the new build. Everything passes except: the 
 ## Done — playability batch, 2026-10-11
 
 * F8 / "Go to <player>" (F9 menu) takes you to the host (host: first other player), with a fade; fixes anyone stuck in a puzzle or a room that is out of step. Warps in general fade in now.
-* Two players can't play the same character: the F9 picker skips taken characters and the later joiner is switched automatically (a spectator no more).
+* (Removed 2026-10-14, see report 5) Two players couldn't play the same character.
 * After Game Over + Continue, clients are taken to the host once they have reloaded.
 * The turn barrier names who it is waiting for on every client (host sends type 35).
 * Downed players' SOUL is dimmed and labelled DOWN.

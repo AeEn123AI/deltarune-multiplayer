@@ -223,13 +223,22 @@ function mp_wval(v)
     }
 }
 
+// Numbers read from a buffer are int32: the game divides HP by max HP, and two int32s divide
+// as integers (71 / 90 = 0, which drew the HP bar empty). Everything received becomes a real.
+function mp_num(v)
+{
+    if (is_int32(v) || is_int64(v))
+        return real(v);
+    return v;
+}
+
 function mp_rval(b)
 {
     var kind = buffer_read(b, buffer_u8);
     if (kind == 0)
-        return buffer_read(b, buffer_s8);
+        return mp_num(buffer_read(b, buffer_s8));
     if (kind == 1)
-        return buffer_read(b, buffer_s32);
+        return mp_num(buffer_read(b, buffer_s32));
     if (kind == 2)
         return buffer_read(b, buffer_f64);
     return buffer_read(b, buffer_string);

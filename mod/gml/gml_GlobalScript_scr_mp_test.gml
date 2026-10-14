@@ -25,6 +25,11 @@
 //   weak            enemies have 1 HP (battle ends quickly)
 //   save            save the game to slot 0 once in free roam (for later load tests)
 //   load:<slot>     load save slot <slot> from the title screen
+//   solo            with `party`: Kris alone
+//   duo             with `party`: Kris and Susie (with `battle`: the battle party)
+//   watchplot       log plot, party and the room's story events every 5 s
+//   staleplot:<a>:<b>  when the plot reaches a (outside battles), set it back to b once
+//   nomono          (test of the stale-plot guard) accept a lower plot from the others
 
 function mp_test_has(tok)
 {
@@ -75,6 +80,15 @@ function mp_test_tick()
         if (pl != "" && !(mp_on() && global.mp_role == 2))
             global.plot = real(pl);
         mp_ch_test_party();
+        // duo: Kris and Susie
+        if (mp_test_has("duo"))
+            global.char[2] = 0;
+        // solo: Kris alone (the very start of the Dark World)
+        if (mp_test_has("solo"))
+        {
+            global.char[1] = 0;
+            global.char[2] = 0;
+        }
         // lightworld: start as in the Light World (Kris and Susie only)
         if (mp_test_has("lightworld"))
         {
@@ -104,6 +118,31 @@ function mp_test_tick()
             x = obj_mainchara.x;
             y = obj_mainchara.y;
             scr_caterpillar_interpolate();
+        }
+    }
+    // watchplot: log story progress, party and what the room's story events are doing every 5 s
+    if (mp_test_has("watchplot") && (global.mp_frame mod 150) == 0 && variable_global_exists("plot"))
+    {
+        var evs = "";
+        with (all)
+        {
+            var onm = object_get_name(object_index);
+            if (string_pos("obj_", onm) == 1 && string_pos("event", onm) > 0 && variable_instance_exists(id, "con"))
+                evs += " " + onm + ":" + string(con);
+        }
+        mp_log("[watch] " + room_get_name(room) + " plot=" + string(global.plot) + " party=" + string(global.char[0]) + string(global.char[1]) + string(global.char[2]) + " interact=" + string(global.interact) + " susieblock=" + string(instance_number(obj_npc_susiedark)) + " battle=" + string(instance_exists(obj_battlecontroller)) + " xy=" + (instance_exists(obj_mainchara) ? string(obj_mainchara.x) + "," + string(obj_mainchara.y) : "-") + " gold=" + string(global.gold) + " flag500=" + string(global.flag[500]) + evs);
+    }
+    // staleplot:<a>:<b>: once the plot reaches <a> (outside battles), set it back to <b>, as the copy
+    // of a cutscene that a lagging player still watches does (Chapter 1 castle softlock)
+    if (mp_test_has("staleplot") && !variable_global_exists("mp_test_staledone") && variable_global_exists("plot") && !instance_exists(obj_battlecontroller))
+    {
+        var sa = mp_test_arg("staleplot");
+        var sc = string_pos(":", sa);
+        if (global.plot == real(string_copy(sa, 1, sc - 1)))
+        {
+            global.mp_test_staledone = 1;
+            global.plot = real(string_delete(sa, 1, sc));
+            mp_log("[test] stale plot written: " + string(global.plot));
         }
     }
     // setplot:<n>: move the story on to <n> after a while (another player doing it while I stand in a room)
@@ -143,7 +182,7 @@ function mp_test_tick()
         show_debug_message("[MPVARS] set flag500=7 gold=" + string(global.gold));
     }
     if (mp_test_has("logvars") && (global.mp_test_timer == 200 || global.mp_test_timer == 700))
-        show_debug_message("[MPVARS] t=" + string(global.mp_test_timer) + " flag500=" + string(global.flag[500]) + " gold=" + string(global.gold) + " plot=" + string(global.plot));
+        show_debug_message("[MPVARS] t=" + string(global.mp_test_timer) + " flag500=" + string(global.flag[500]) + " xy=" + (instance_exists(obj_mainchara) ? string(obj_mainchara.x) + "," + string(obj_mainchara.y) : "-") + " gold=" + string(global.gold) + " plot=" + string(global.plot));
     var battle_delay = mp_test_arg("battleat") != "" ? real(mp_test_arg("battleat")) : 120;
     if (mp_test_has("battle") && !global.mp_test_battled && instance_exists(obj_mainchara) && global.mp_test_timer > battle_delay && global.interact == 0 && (mp_on() || global.mp_role == 0))
     {
@@ -157,10 +196,24 @@ function mp_test_tick()
             global.char[0] = 1;
             global.char[1] = 2;
             global.char[2] = 3;
+            // duo: Kris and Susie only (whoever plays Ralsei watches)
+            if (mp_test_has("duo"))
+                global.char[2] = 0;
             global.encounterno = real(mp_test_arg("battle"));
             mp_notify("[test] starting encounter " + string(global.encounterno));
             mp_battle_force_start();
         }
+    }
+    if (mp_test_has("numtest") && global.mp_test_timer == 60)
+    {
+        var bb = buffer_create(8, buffer_fixed, 1);
+        buffer_write(bb, buffer_s32, 71);
+        buffer_seek(bb, buffer_seek_start, 0);
+        var iv = buffer_read(bb, buffer_s32);
+        buffer_delete(bb);
+        var a = mp_num(iv);
+        var r = real(iv);
+        show_debug_message("[NUMTEST] raw " + typeof(iv) + " " + string(iv / 90) + " | mp_num " + typeof(a) + " " + string(a / 90) + " " + string(a) + " | real() " + typeof(r) + " " + string(r / 90));
     }
     if (mp_test_has("crashtest") && global.mp_test_timer == 100)
         show_debug_message(real(global.mp_test));
@@ -487,7 +540,7 @@ function mp_test_hash()
         }
     }
     var mus = global.mp_tmp_mus;
-    return "mus=" + mus + " nact=" + string(asset_get_index("obj_actor") >= 0 ? instance_number(asset_get_index("obj_actor")) : 0) + " plot=" + string(global.plot) + " gold=" + string(global.gold) + " party=" + party + " hfl=" + string_copy(md5_string_utf8(fl), 1, 8) + " hit=" + string_copy(md5_string_utf8(it), 1, 8) + " hhp=" + string_copy(md5_string_utf8(hp), 1, 8);
+    return "mus=" + mus + " nact=" + string(asset_get_index("obj_actor") >= 0 ? instance_number(asset_get_index("obj_actor")) : 0) + " plot=" + string(global.plot) + " xy=" + (instance_exists(obj_mainchara) ? string(obj_mainchara.x) + "," + string(obj_mainchara.y) : "-") + " gold=" + string(global.gold) + " party=" + party + " hfl=" + string_copy(md5_string_utf8(fl), 1, 8) + " hit=" + string_copy(md5_string_utf8(it), 1, 8) + " hhp=" + string_copy(md5_string_utf8(hp), 1, 8);
 }
 
 // Character a (field or board) sprite belongs to.

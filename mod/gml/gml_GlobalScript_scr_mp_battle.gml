@@ -228,7 +228,7 @@ function mp_battle_recv(type, from, b)
         var bid2 = buffer_read(b, buffer_u16);
         var turn2 = buffer_read(b, buffer_u16);
         var slot = buffer_read(b, buffer_u8);
-        var pts = buffer_read(b, buffer_s16);
+        var pts = mp_num(buffer_read(b, buffer_s16));
         ds_map_set(global.mp_qte, (turn2 * 4) + slot, pts);
         mp_log("qte recv turn=" + string(turn2) + " slot=" + string(slot) + " pts=" + string(pts));
         return;
@@ -237,7 +237,7 @@ function mp_battle_recv(type, from, b)
     {
         var slot2 = buffer_read(b, buffer_u8);
         var chr = buffer_read(b, buffer_u8);
-        var hp = buffer_read(b, buffer_s16);
+        var hp = mp_num(buffer_read(b, buffer_s16));
         if (mp_battle_on() && slot2 < 3 && global.char[slot2] == chr && global.mp_owner[slot2] == from)
         {
             global.mp_rhp[slot2] = hp;
@@ -281,7 +281,7 @@ function mp_battle_recv(type, from, b)
         for (var s = 0; s < 3; s++)
         {
             st[3 + s] = buffer_read(b, buffer_u8);
-            st[6 + s] = buffer_read(b, buffer_s16);
+            st[6 + s] = mp_num(buffer_read(b, buffer_s16));
             st[9 + s] = buffer_read(b, buffer_f64);
             st[12 + s] = buffer_read(b, buffer_f64);
             st[15 + s] = buffer_read(b, buffer_u8);
@@ -614,7 +614,7 @@ function mp_battle_apply_hp()
         if (old == nw)
             continue;
         global.hp[c] = nw;
-        mp_log("hp apply slot=" + string(s) + " " + string(old) + "->" + string(nw));
+        mp_log("hp apply slot=" + string(s) + " " + string(old) + "->" + string(nw) + " (" + typeof(nw) + ")");
         changed = true;
         var inst = global.charinstance[s];
         if (nw < old && instance_exists(inst))
@@ -694,9 +694,12 @@ function mp_party_size()
     return n;
 }
 
-// A spectator's SOUL was hit: no hero takes damage, but show invincibility frames.
+// A SOUL that controls no standing hero was hit: no hero takes damage. A downed player's SOUL
+// still flashes; a watcher's (nobody of theirs in the battle) shows nothing at all.
 function mp_damage_spectator()
 {
+    if (mp_my_slot_count() == 0)
+        return;
     if (global.inv < 0)
     {
         global.inv = global.invc * 40;
@@ -836,15 +839,29 @@ function mp_battle_status()
         if (o < 8 && global.mp_pconn[o])
             return global.mp_pname[o] + " is choosing for " + cn + "...";
     }
+    if (mp_my_slot_count() == 0)
+    {
+        for (var s = 0; s < 3; s++)
+        {
+            var o2 = global.mp_owner[s];
+            if (global.char[s] == global.mp_cfg_char && o2 < 8 && o2 != global.mp_myid && global.mp_pconn[o2])
+                return "Watching: " + global.mp_pname[o2] + " plays " + mp_char_name(global.mp_cfg_char) + " in this battle. No need to dodge.";
+        }
+        return "Watching: " + mp_char_name(global.mp_cfg_char) + " is not in this battle. No need to dodge.";
+    }
+    return "";
+}
+
+// How many party slots I control in this battle (0: I only watch).
+function mp_my_slot_count()
+{
     var mine = 0;
     for (var s = 0; s < 3; s++)
     {
         if (global.char[s] != 0 && global.mp_owner[s] == global.mp_myid)
             mine++;
     }
-    if (mine == 0)
-        return "Spectating: " + mp_char_name(global.mp_cfg_char) + " is not in the party (F9 to switch)";
-    return "";
+    return mine;
 }
 
 // An enemy the host already defeated/spared is still here (desync): defeat it locally.
@@ -934,8 +951,9 @@ function mp_ch_revive(slot)
     scr_revive(slot);
 }
 
-// Appended to obj_heart's Draw: when every hero I play is down, my SOUL is shown dimmed with a
-// "DOWN" label (it still moves, but nothing happens when it is hit).
+// Appended to obj_heart's Draw: when every hero I play is down, or I play nobody in this battle,
+// my SOUL is shown dimmed with a "DOWN" or "WATCHING" label (it still moves, but nothing
+// happens when it is hit).
 function mp_heart_draw_down()
 {
     if (!variable_global_exists("mp_inited") || !mp_battle_on())
@@ -951,8 +969,10 @@ function mp_heart_draw_down()
                 up++;
         }
     }
-    if (mine == 0 || up > 0)
+    if (mine > 0 && up > 0)
         return;
+    // Nobody of mine in this battle: the SOUL is only there to watch the attacks.
+    var label = mine == 0 ? "WATCHING" : "DOWN";
     var oc = draw_get_color();
     var oa = draw_get_alpha();
     var of = draw_get_font();
@@ -964,8 +984,8 @@ function mp_heart_draw_down()
     draw_set_halign(fa_center);
     draw_set_valign(fa_bottom);
     draw_set_alpha(1);
-    draw_text_transformed_color(x + 9 + 1, y - 4 + 1, "DOWN", 1, 1, 0, c_black, c_black, c_black, c_black, 1);
-    draw_text_transformed_color(x + 9, y - 4, "DOWN", 1, 1, 0, c_ltgray, c_ltgray, c_ltgray, c_ltgray, 1);
+    draw_text_transformed_color(x + 9 + 1, y - 4 + 1, label, 1, 1, 0, c_black, c_black, c_black, c_black, 1);
+    draw_text_transformed_color(x + 9, y - 4, label, 1, 1, 0, c_ltgray, c_ltgray, c_ltgray, c_ltgray, 1);
     draw_set_font(of);
     draw_set_halign(oh);
     draw_set_valign(ov);

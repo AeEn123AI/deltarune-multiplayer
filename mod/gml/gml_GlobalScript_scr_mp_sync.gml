@@ -40,10 +40,14 @@ function mp_sync_init()
     global.mp_gameover = 0;
     global.mp_scenes_killed = 0;
     global.mp_postbattle = 0;
+    global.mp_postbattle_waits = 0;
+    global.mp_noclip = 0;
+    global.mp_ui_plot = 0;
     global.mp_goto_blocked = -99999;
     global.mp_goto_timer = 0;
     global.mp_ch1ev_frame = -99;
     global.mp_ch1ev_value = false;
+    global.mp_ch1ev_active = false;
     global.mp_plot_remote = -1;
     global.mp_pre_master = -1;
     global.mp_pre_actors = 0;
@@ -494,24 +498,58 @@ function mp_cutscene_running()
 
 function mp_ch1_event_running()
 {
+    mp_ch1_event_scan();
+    return global.mp_ch1ev_value;
+}
+
+// Chapter 1 has no cutscene master. Its story controllers are obj_*event objects whose `con`
+// counter goes up while they play and then stays put. A story event that leads into a battle
+// in the same room keeps going after it (Ralsei's castle scene: battle at con 72, story up to
+// con 109), so "still playing" is: con above 0 and changed in the last 10 seconds.
+function mp_ch1_event_scan()
+{
     if ((global.mp_frame - global.mp_ch1ev_frame) < 10)
-        return global.mp_ch1ev_value;
+        return;
     global.mp_ch1ev_frame = global.mp_frame;
-    var found = false;
+    var running = false;
+    var active = false;
+    var fr = global.mp_frame;
     with (all)
     {
         var nm = object_get_name(object_index);
         if (string_pos("obj_", nm) == 1 && string_pos("event", nm) > 0 && variable_instance_exists(id, "con"))
         {
-            if (is_real(con) && con > 0 && con < 90)
+            if (is_real(con))
             {
-                found = true;
-                break;
+                if (!variable_instance_exists(id, "mp_lastcon") || mp_lastcon != con)
+                {
+                    mp_lastcon = con;
+                    mp_conframe = fr;
+                }
+                var recent = (fr - mp_conframe) < 300;
+                if (con > 0 && (con < 90 || recent))
+                    running = true;
+                if (con > 0 && recent)
+                    active = true;
             }
         }
     }
-    global.mp_ch1ev_value = found;
-    return found;
+    global.mp_ch1ev_value = running;
+    global.mp_ch1ev_active = active;
+}
+
+// A story event is playing in this room right now (whether or not it has control of the
+// player at this moment): rebuilding the room would delete it, and in Chapter 1 such an event
+// deletes itself on the rebuilt room when the plot it set is already there, so the story
+// could never finish (a softlock that also survives reloading the save).
+function mp_room_event_active()
+{
+    if (mp_cutscene_running())
+        return true;
+    if (global.mp_chapter != 1)
+        return false;
+    mp_ch1_event_scan();
+    return global.mp_ch1ev_active;
 }
 
 // I am now playing the cutscene `from` leads, in my own game.

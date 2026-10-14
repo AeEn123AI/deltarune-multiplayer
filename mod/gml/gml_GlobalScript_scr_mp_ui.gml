@@ -17,25 +17,20 @@ function mp_ui_init()
 // Menu rows (built each frame so they reflect the session state).
 function mp_ui_rows()
 {
-    var r = [];
-    r[0] = "name";
-    r[1] = "char";
+    var r = ["name", "char"];
     if (global.mp_role == 0)
     {
-        r[2] = "host";
-        r[3] = "ip";
-        r[4] = "join";
-        r[5] = "stopsound";
-        r[6] = "close";
+        array_push(r, "host", "ip", "join");
     }
     else
     {
-        r[2] = "goto";
-        r[3] = "leave";
-        r[4] = "hud";
-        r[5] = "stopsound";
-        r[6] = "close";
+        array_push(r, "goto", "leave", "hud");
     }
+    array_push(r, "stopsound", "noclip");
+    // Softlock tools that change the shared story: the host's (or a single player's) to use.
+    if (mp_story_tools_allowed() && variable_global_exists("plot"))
+        array_push(r, "story", "rewind");
+    array_push(r, "close");
     return r;
 }
 
@@ -44,6 +39,8 @@ function mp_ui_input()
 {
     if (keyboard_check_pressed(vk_f7) && !global.mp_ui_open)
         mp_stop_all_sound();
+    if (keyboard_check_pressed(vk_f6) && !global.mp_ui_open)
+        mp_noclip_toggle();
     if (keyboard_check_pressed(vk_f8) && !global.mp_ui_open && mp_on())
         mp_go_to_player(mp_goto_target());
     if (keyboard_check_pressed(vk_f9))
@@ -51,6 +48,8 @@ function mp_ui_input()
         global.mp_ui_open = !global.mp_ui_open;
         global.mp_ui_edit = -1;
         global.mp_ui_sel = 0;
+        if (variable_global_exists("plot"))
+            global.mp_ui_plot = global.plot;
         mp_ui_block();
         return;
     }
@@ -100,13 +99,20 @@ function mp_ui_input()
         var d = 1;
         if (global.input_pressed[3])
             d = -1;
-        global.mp_cfg_char = mp_char_free_from(global.mp_cfg_char, d);
+        global.mp_cfg_char = ((global.mp_cfg_char - 1 + d + mp_char_max()) mod mp_char_max()) + 1;
         mp_config_save();
         if (mp_on())
         {
             global.mp_pchar[global.mp_myid] = global.mp_cfg_char;
             mp_send_pinfo(global.mp_myid);
         }
+    }
+    if (row == "story" && (global.input_pressed[1] || global.input_pressed[3]))
+    {
+        var step = keyboard_check(vk_shift) ? 10 : 1;
+        if (global.input_pressed[3])
+            step = -step;
+        global.mp_ui_plot = max(0, global.mp_ui_plot + step);
     }
     var confirm = global.input_pressed[4] || keyboard_check_pressed(vk_enter);
     if (confirm)
@@ -144,6 +150,18 @@ function mp_ui_input()
             global.mp_ui_hud = !global.mp_ui_hud;
         if (row == "stopsound")
             mp_stop_all_sound();
+        if (row == "noclip")
+            mp_noclip_toggle();
+        if (row == "story")
+        {
+            global.mp_ui_open = 0;
+            mp_story_set(global.mp_ui_plot);
+        }
+        if (row == "rewind")
+        {
+            global.mp_ui_open = 0;
+            mp_checkpoint_rewind();
+        }
         if (row == "close")
             global.mp_ui_open = 0;
     }
@@ -168,7 +186,18 @@ function mp_ui_rowtext(row)
         case "name":
             return "Name:  " + global.mp_cfg_name;
         case "char":
-            return "Play as:  < " + mp_char_name(global.mp_cfg_char) + " >";
+            var ct = "Play as:  < " + mp_char_name(global.mp_cfg_char) + " >";
+            // Several players may play the same character; in battle the first of them
+            // (lowest player number) controls it and the others watch.
+            var co = mp_on() ? mp_char_player_other(global.mp_cfg_char) : -1;
+            if (co >= 0)
+            {
+                ct += "  (also " + global.mp_pname[co];
+                if (co < global.mp_myid)
+                    ct += ": you watch battles";
+                ct += ")";
+            }
+            return ct;
         case "host":
             return "Host a game (port " + string(global.mp_cfg_port) + ")";
         case "ip":
@@ -190,6 +219,15 @@ function mp_ui_rowtext(row)
             return "Player list:  OFF";
         case "stopsound":
             return "Stop all music and sounds  (F7)";
+        case "noclip":
+            return "Noclip (walk through walls):  " + (global.mp_noclip ? "ON" : "OFF") + "  (F6)";
+        case "story":
+            var sp = "Fix softlock: story progress < " + string(global.mp_ui_plot) + " >";
+            if (global.mp_ui_plot != global.plot)
+                sp += " (now " + string(global.plot) + ")";
+            return sp;
+        case "rewind":
+            return "Fix softlock: replay this room's story";
         case "close":
             return "Close";
     }
@@ -319,7 +357,12 @@ function mp_draw_gui()
     if (global.mp_ui_open)
     {
         var rows = mp_ui_rows();
-        var bw = 300 * sc;
+        if (global.mp_font >= 0)
+            draw_set_font(global.mp_font);
+        var tw = 0;
+        for (var r0 = 0; r0 < array_length(rows); r0++)
+            tw = max(tw, string_width(mp_ui_rowtext(rows[r0])));
+        var bw = min(max(300, tw + 40) * sc, gw - 8 * sc);
         var bh = (54 + (array_length(rows) * 22)) * sc;
         var bx = (gw - bw) / 2;
         var by = (gh - bh) / 2;

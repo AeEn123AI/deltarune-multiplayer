@@ -168,3 +168,20 @@ mp_board_draw_piece(x, y);
 if (instance_exists(target) && !sprite_exists(target.sprite_index))
     exit;
 #chapters all
+
+;; Noclip (F6): the player's wall checks find no walls while it is on.
+@regex gml_Object_obj_mainchara_Step_0
+place_meeting\(([^()]*), obj_solidblock\)
+@with
+(!mp_noclip_on() && place_meeting($1, obj_solidblock))
+@end
+
+;; A story event played again (rewind, story tool, or another player's copy) must not put a party
+;; member in the party twice.
+@regex gml_GlobalScript_scr_getchar
+(function scr_getchar\(arg0\)\s*\{)
+@with
+$1
+    if (mp_party_dup(arg0))
+        return;
+@end

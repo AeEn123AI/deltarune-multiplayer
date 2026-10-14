@@ -86,14 +86,30 @@ Handy things:
   want to catch up.
 * **F7** (or "Stop all music and sounds" in the F9 menu) stops everything that is playing. Use it if the
   music gets out of step; the game starts a room's music again the next time you enter a room.
-* Two players can't play the same character: the one who joined later is switched
-  automatically, and the F9 character picker skips characters that are taken.
+* Several players can pick the same character (with more players than party members someone
+  has to). Everyone walks around as their pick; in battle the first player (lowest number)
+  controls that character and the others watch. The F9 picker shows "(also P2: you watch
+  battles)" when that is you.
+* If your character isn't in a battle (or someone else controls it) you still see the attacks,
+  but your SOUL is dimmed and marked **WATCHING**: you don't have to dodge, nothing hits you.
 * When a chapter ends and you start the next one within a few minutes, the session continues
   by itself: the host hosts again and the others join again.
 * After a Game Over and Continue, everyone is taken back to the host.
 * If another player moves the story on while you are standing in a room, the room is
   rebuilt (same spot) a moment later so it matches theirs.
 * Players are in the same world (Light / Dark) as whoever they join or are pulled to.
+
+If the story gets stuck (a cutscene that never finishes, a character blocking the way for
+good), the F9 menu has softlock tools:
+* **F6 / "Noclip"**: walk through walls (only your own game; turn it off again with F6).
+* **"Fix softlock: replay this room's story"** (host): puts the story back to how it was when
+  you entered the room and enters it again for everyone, so its cutscene plays again.
+* **"Fix softlock: story progress < N >"** (host): left/right (hold Shift for 10) change the
+  game's story progress value, Z applies it for everyone and enters the room again. Example:
+  Chapter 1, Susie blocks the way to Ralsei's training dummy after the Lancer battle in a save
+  that got stuck: go back one room to the castle's front door (where Ralsei and Lancer
+  appeared), set it to **19** and apply; that scene and the Lancer battle play again and the
+  story carries on.
 
 The player list (top-left) shows each player's character, ping and whether they're in a
 battle or cutscene. The yellow line at the top tells you whose turn it is in battle
